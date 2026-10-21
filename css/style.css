@@ -902,6 +902,9 @@ label.rule {
   border: 1px solid var(--line);
   display: flex;
   align-items: center;
+  position: relative;
+  cursor: pointer;
+  box-sizing: border-box;
 }
 .tsw i {
   width: 26px;
@@ -912,11 +915,16 @@ label.rule {
   place-items: center;
   font-style: normal;
   font-size: 14px;
-  transition: transform 0.45s cubic-bezier(0.3, 1.4, 0.5, 1);
-  box-shadow: 0 4px 12px rgba(255, 90, 100, 0.4);
+  line-height: 1;
+  user-select: none;
+  transform: translateX(0);
+  transition: transform 0.45s cubic-bezier(0.3, 1.4, 0.5, 1), background 0.4s, box-shadow 0.4s;
+  box-shadow: 0 4px 12px rgba(20, 184, 166, 0.4);
 }
 :root[data-theme="light"] .tsw i {
   transform: translateX(30px);
+  background: linear-gradient(120deg, #ff8a3d, #ffd166);
+  box-shadow: 0 4px 12px rgba(255, 138, 61, 0.55);
 }
 .gh {
   display: flex;

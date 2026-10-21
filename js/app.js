@@ -3981,7 +3981,18 @@ function setTheme(t, sv) {
   }
   var b = $("#thm");
   if (b) {
-    b.firstChild.textContent = t === "light" ? "☀️" : "🌙";
+    var icon = b.querySelector("i");
+    if (!icon) {
+      b.innerHTML = "<i>" + (t === "light" ? "☀️" : "🌙") + "</i>";
+    } else {
+      icon.textContent = t === "light" ? "☀️" : "🌙";
+      while (b.firstChild && b.firstChild !== icon) {
+        b.removeChild(b.firstChild);
+      }
+      while (b.lastChild && b.lastChild !== icon) {
+        b.removeChild(b.lastChild);
+      }
+    }
     b.setAttribute(
       "aria-label",
       "Switch to " + (t === "light" ? "dark" : "light") + " mode",
