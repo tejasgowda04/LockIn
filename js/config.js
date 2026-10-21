@@ -11,19 +11,20 @@ var LOCKIN_CONFIG = {
   // --- 1. Firebase Authentication Config (Free Tier) ---
   // Get from: Firebase Console -> Project Settings -> General -> Your Apps (Web </>)
   firebase: {
-    apiKey: "",
-    authDomain: "",
-    projectId: "",
-    storageBucket: "",
-    messagingSenderId: "",
-    appId: ""
+    apiKey: "AIzaSyDuuU1tc1mUE6vYf7xkKYw6PrxEZ0sFoyg",
+    authDomain: "lockin-dba7f.firebaseapp.com",
+    projectId: "lockin-dba7f",
+    storageBucket: "lockin-dba7f.firebasestorage.app",
+    messagingSenderId: "583892921334",
+    appId: "1:583892921334:web:e072c5a1690aa4fa2fb5d7",
+    measurementId: "G-LSFD8XYY2P"
   },
 
   // --- 2. Supabase PostgreSQL & Storage Config (Free Tier) ---
   // Get from: Supabase Dashboard -> Project Settings -> API (Project URL & anon public key)
   supabase: {
-    url: "",
-    anonKey: ""
+    url: "https://nuyfeyjfmuvlshntkqjw.supabase.co",
+    anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51eWZleWpmbXV2bHNobnRrcWp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2MDgyNjYsImV4cCI6MjEwODE4NDI2Nn0.X1-OfcMhlFScXN53cP23MibFJ7Q78wwfjLDsTJrO2WQ"
   }
 };
 
