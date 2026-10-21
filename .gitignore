@@ -1,0 +1,9 @@
+# Backups & Archives
+*.bak
+*.zip
+lockin-vercel/
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+Desktop.ini
