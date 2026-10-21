@@ -3050,7 +3050,6 @@ function me() {
           "</b>. Trades & screenshots sync across devices.</p>" +
           '<div style="display:flex;gap:8px;">' +
           '<button class="pri" style="flex:1;min-height:38px;padding:6px 12px;font-size:13px;" onclick="LockinSync.saveUserData(true)">Sync Now</button>' +
-          '<button class="ghost" style="flex:1;min-height:38px;padding:6px 12px;font-size:13px;" onclick="LockinAuth.showConfigModal()">Cloud Keys</button>' +
           '<button class="ghost" style="min-height:38px;padding:6px 12px;font-size:13px;color:var(--dn);" onclick="LockinAuth.signOut()">Sign Out</button>' +
           "</div></div>"
         );
@@ -3061,8 +3060,7 @@ function me() {
           '<b>Cloud Account & Backup ☁️</b><span class="badge b-ps">Offline / Guest</span></div>' +
           '<p class="mut" style="font-size:12.5px;margin:0 0 10px;">Sign in to sync your trades across phone & PC with Firebase & Supabase.</p>' +
           '<div style="display:flex;gap:8px;">' +
-          '<button class="pri" style="flex:1;min-height:38px;padding:6px 12px;font-size:13px;" onclick="LockinAuth.showAuthModal()">Sign In / Register</button>' +
-          '<button class="ghost" style="flex:1;min-height:38px;padding:6px 12px;font-size:13px;" onclick="LockinAuth.showConfigModal()">Cloud Setup</button>' +
+          '<button class="pri" style="width:100%;min-height:38px;padding:6px 12px;font-size:13px;" onclick="LockinAuth.showAuthModal()">Sign In / Register</button>' +
           "</div></div>"
         );
       }

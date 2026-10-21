@@ -68,14 +68,13 @@ var LockinAuth = (function () {
         var name = _currentUser.displayName || _currentUser.email || "Trader";
         avBtn.textContent = name.charAt(0).toUpperCase();
       }
-      avBtn.title =
-        _currentUser.displayName || _currentUser.email || "My Account";
+      avBtn.title = _currentUser.displayName || _currentUser.email || "My Account";
     } else {
       avBtn.textContent =
         S && S.profile && S.profile.name
           ? S.profile.name.charAt(0).toUpperCase()
           : "T";
-      avBtn.title = "Profile & Cloud Login";
+      avBtn.title = "Profile & Account";
     }
   }
 
@@ -97,7 +96,7 @@ var LockinAuth = (function () {
 
   function signInWithGoogle() {
     if (!_authInstance) {
-      showConfigModal();
+      toast("Firebase keys need to be added to js/config.js first.");
       return Promise.reject("Firebase not configured");
     }
     var provider = new firebase.auth.GoogleAuthProvider();
@@ -109,7 +108,7 @@ var LockinAuth = (function () {
 
   function signInWithEmail(email, password) {
     if (!_authInstance) {
-      showConfigModal();
+      toast("Firebase keys need to be added to js/config.js first.");
       return Promise.reject("Firebase not configured");
     }
     return _authInstance
@@ -122,7 +121,7 @@ var LockinAuth = (function () {
 
   function signUpWithEmail(email, password, displayName) {
     if (!_authInstance) {
-      showConfigModal();
+      toast("Firebase keys need to be added to js/config.js first.");
       return Promise.reject("Firebase not configured");
     }
     return _authInstance
@@ -150,7 +149,7 @@ var LockinAuth = (function () {
 
   function showAuthModal() {
     if (!isFirebaseConfigured()) {
-      showConfigModal();
+      toast("Please add your Firebase keys to js/config.js to enable cloud login.");
       return;
     }
 
@@ -181,7 +180,6 @@ var LockinAuth = (function () {
         "</div>" +
         '<div style="display:flex;flex-direction:column;gap:10px;">' +
         '<button class="pri" onclick="LockinSync.saveUserData(true);toast(\'Data synced to Supabase!\');">Sync Now to Supabase</button>' +
-        '<button class="ghost" onclick="LockinAuth.showConfigModal()">Cloud Settings & API Keys</button>' +
         '<button class="ghost" style="color:var(--dn);border-color:rgba(239,68,68,0.3);" onclick="LockinAuth.signOut();closeM();">Sign Out</button>' +
         "</div>";
       modal(html);
@@ -232,11 +230,9 @@ var LockinAuth = (function () {
     }
     var nameGroup = document.querySelector("#authNameGroup");
     var submitBtn = document.querySelector("#authSubmitBtn");
-    if (nameGroup)
-      nameGroup.style.display = mode === "signup" ? "block" : "none";
+    if (nameGroup) nameGroup.style.display = mode === "signup" ? "block" : "none";
     if (submitBtn)
-      submitBtn.textContent =
-        mode === "signup" ? "Create Free Account" : "Sign In";
+      submitBtn.textContent = mode === "signup" ? "Create Free Account" : "Sign In";
   }
 
   function handleAuthSubmit() {
@@ -264,73 +260,6 @@ var LockinAuth = (function () {
     }
   }
 
-  function showConfigModal() {
-    var fb = LOCKIN_CONFIG.firebase;
-    var sb = LOCKIN_CONFIG.supabase;
-
-    var html =
-      "<h2>Cloud Sync Setup ⚙️</h2>" +
-      '<p class="mut" style="font-size:13px;margin:6px 0 14px;">Connect your free Firebase Auth & Supabase PostgreSQL to enable cloud sync for you and your trading group.</p>' +
-      '<div style="max-height:60vh;overflow-y:auto;padding-right:4px;">' +
-      '<h3 style="color:var(--cy);margin-top:10px;">1. Firebase Auth Config (Free)</h3>' +
-      "<label>API Key</label>" +
-      '<input id="cfg_fb_apiKey" value="' +
-      esc(fb.apiKey) +
-      '" placeholder="AIzaSy...">' +
-      "<label>Auth Domain</label>" +
-      '<input id="cfg_fb_authDomain" value="' +
-      esc(fb.authDomain) +
-      '" placeholder="your-app.firebaseapp.com">' +
-      "<label>Project ID</label>" +
-      '<input id="cfg_fb_projectId" value="' +
-      esc(fb.projectId) +
-      '" placeholder="your-app">' +
-      "<label>App ID</label>" +
-      '<input id="cfg_fb_appId" value="' +
-      esc(fb.appId) +
-      '" placeholder="1:123456789:web:abcdef">' +
-      '<h3 style="color:var(--cy);margin-top:16px;">2. Supabase PostgreSQL Config (Free)</h3>' +
-      "<label>Supabase Project URL</label>" +
-      '<input id="cfg_sb_url" value="' +
-      esc(sb.url) +
-      '" placeholder="https://xyzcompany.supabase.co">' +
-      "<label>Supabase Anon Public Key</label>" +
-      '<input id="cfg_sb_anonKey" value="' +
-      esc(sb.anonKey) +
-      '" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI...">' +
-      "</div>" +
-      '<div style="display:flex;gap:10px;margin-top:16px;">' +
-      '<button class="pri" style="flex:1;" onclick="LockinAuth.saveCloudConfig()">Save & Connect</button>' +
-      '<button class="ghost" style="flex:1;" onclick="closeM()">Cancel</button>' +
-      "</div>";
-
-    modal(html);
-  }
-
-  function saveCloudConfig() {
-    var fb = {
-      apiKey: document.querySelector("#cfg_fb_apiKey").value.trim(),
-      authDomain: document.querySelector("#cfg_fb_authDomain").value.trim(),
-      projectId: document.querySelector("#cfg_fb_projectId").value.trim(),
-      appId: document.querySelector("#cfg_fb_appId").value.trim(),
-    };
-    var sb = {
-      url: document.querySelector("#cfg_sb_url").value.trim(),
-      anonKey: document.querySelector("#cfg_sb_anonKey").value.trim(),
-    };
-
-    localStorage.setItem("lockin_firebase_cfg", JSON.stringify(fb));
-    localStorage.setItem("lockin_supabase_cfg", JSON.stringify(sb));
-    LOCKIN_CONFIG.firebase = Object.assign({}, LOCKIN_CONFIG.firebase, fb);
-    LOCKIN_CONFIG.supabase = Object.assign({}, LOCKIN_CONFIG.supabase, sb);
-
-    closeM();
-    toast("Configuration saved! Initializing cloud...");
-    _initialized = false;
-    init();
-    if (typeof LockinSync !== "undefined") LockinSync.init();
-  }
-
   return {
     init: init,
     getCurrentUser: getCurrentUser,
@@ -339,9 +268,7 @@ var LockinAuth = (function () {
     signUpWithEmail: signUpWithEmail,
     signOut: signOut,
     showAuthModal: showAuthModal,
-    showConfigModal: showConfigModal,
     switchAuthTab: switchAuthTab,
     handleAuthSubmit: handleAuthSubmit,
-    saveCloudConfig: saveCloudConfig,
   };
 })();
