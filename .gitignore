@@ -2,6 +2,7 @@
 *.bak
 *.zip
 lockin-vercel/
+scratch/
 
 # Operating System Files
 .DS_Store

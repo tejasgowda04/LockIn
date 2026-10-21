@@ -42,6 +42,13 @@ function load() {
 function save() {
   try {
     localStorage.setItem(K, JSON.stringify(S));
+    if (
+      typeof LockinSync !== "undefined" &&
+      typeof LockinAuth !== "undefined" &&
+      LockinAuth.getCurrentUser()
+    ) {
+      LockinSync.saveUserData(false);
+    }
     return true;
   } catch (e) {
     toast("Couldn’t save on this device. Export a backup.");
@@ -1384,6 +1391,9 @@ function shotPut(k, v) {
   );
 }
 function shotGet(k) {
+  if (k && (k.startsWith("http://") || k.startsWith("https://"))) {
+    return Promise.resolve(k);
+  }
   return idb().then(
     (db) =>
       new Promise((res, rej) => {
@@ -1640,6 +1650,34 @@ function tradeForm(id) {
       for (var i = 0; i < SLOTS.length; i++) {
         var k = SLOTS[i][0];
         if (shp[k]) {
+          if (
+            typeof LockinSync !== "undefined" &&
+            typeof LockinAuth !== "undefined" &&
+            LockinAuth.getCurrentUser() &&
+            isSupabaseConfigured() &&
+            typeof shp[k] === "string" &&
+            shp[k].startsWith("data:")
+          ) {
+            try {
+              var byteString = atob(shp[k].split(",")[1]);
+              var mimeString = shp[k].split(",")[0].split(":")[1].split(";")[0];
+              var ab = new ArrayBuffer(byteString.length);
+              var ia = new Uint8Array(ab);
+              for (var bi = 0; bi < byteString.length; bi++) {
+                ia[bi] = byteString.charCodeAt(bi);
+              }
+              var blob = new Blob([ab], { type: mimeString });
+              var cdnUrl = await LockinSync.uploadScreenshot(
+                blob,
+                tid + "_" + k,
+              );
+              if (cdnUrl) {
+                shp[k] = cdnUrl;
+              }
+            } catch (err) {
+              console.warn("Supabase upload fallback to local:", err);
+            }
+          }
           await shotPut(tid + ":" + k, shp[k]);
           sh.push(k);
         } else if (shp[k] === null) {
@@ -1692,6 +1730,9 @@ function tradeForm(id) {
         shotDel(tid + ":" + k).catch(function () {});
       });
       S.trades = S.trades.filter((x) => x.id !== id);
+      if (typeof LockinSync !== "undefined") {
+        LockinSync.deleteTrade(id);
+      }
       save();
       closeM();
       toast("Trade deleted");
@@ -2995,7 +3036,38 @@ function me() {
           .join("") +
         "</div>"
       : "") +
-    '<p class="mut">🔒 All of this lives only on this device. Nothing leaves it unless you tap Share.</p><button onclick="profileForm()">' +
+    (function () {
+      var isAuth =
+        typeof LockinAuth !== "undefined" && LockinAuth.getCurrentUser();
+      var u = isAuth ? LockinAuth.getCurrentUser() : null;
+      if (u) {
+        return (
+          '<div style="margin:14px 0;padding:12px;background:rgba(20,184,166,.1);border:1px solid rgba(20,184,166,.3);border-radius:14px;">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+          '<b>Cloud Sync Active ☁️</b><span class="badge b-fd">Connected</span></div>' +
+          '<p class="mut" style="font-size:12.5px;margin:0 0 10px;">Signed in as <b>' +
+          esc(u.email) +
+          "</b>. Trades & screenshots sync across devices.</p>" +
+          '<div style="display:flex;gap:8px;">' +
+          '<button class="pri" style="flex:1;min-height:38px;padding:6px 12px;font-size:13px;" onclick="LockinSync.saveUserData(true)">Sync Now</button>' +
+          '<button class="ghost" style="flex:1;min-height:38px;padding:6px 12px;font-size:13px;" onclick="LockinAuth.showConfigModal()">Cloud Keys</button>' +
+          '<button class="ghost" style="min-height:38px;padding:6px 12px;font-size:13px;color:var(--dn);" onclick="LockinAuth.signOut()">Sign Out</button>' +
+          "</div></div>"
+        );
+      } else {
+        return (
+          '<div style="margin:14px 0;padding:12px;background:var(--surf2);border:1px solid var(--line);border-radius:14px;">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+          '<b>Cloud Account & Backup ☁️</b><span class="badge b-ps">Offline / Guest</span></div>' +
+          '<p class="mut" style="font-size:12.5px;margin:0 0 10px;">Sign in to sync your trades across phone & PC with Firebase & Supabase.</p>' +
+          '<div style="display:flex;gap:8px;">' +
+          '<button class="pri" style="flex:1;min-height:38px;padding:6px 12px;font-size:13px;" onclick="LockinAuth.showAuthModal()">Sign In / Register</button>' +
+          '<button class="ghost" style="flex:1;min-height:38px;padding:6px 12px;font-size:13px;" onclick="LockinAuth.showConfigModal()">Cloud Setup</button>' +
+          "</div></div>"
+        );
+      }
+    })() +
+    '<button onclick="profileForm()">' +
     (P.name ? "Edit profile" : "Set up profile") +
     "</button></div>" +
     share()
@@ -4010,3 +4082,11 @@ if (!S.profile.name)
   setTimeout(function () {
     if (!$(".veil")) profileForm(true);
   }, 700);
+
+// Initialize Cloud Authentication & Database Synchronization
+if (typeof LockinAuth !== "undefined") {
+  LockinAuth.init();
+}
+if (typeof LockinSync !== "undefined") {
+  LockinSync.init();
+}

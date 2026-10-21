@@ -35,6 +35,13 @@
     window.qrcode || document.write('<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"><\/script>');
   </script>
 
+  <!-- Firebase Authentication SDKs (v10 compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+
+  <!-- Supabase Client SDK (v2 for PostgreSQL & Storage) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <!-- External Stylesheet -->
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -73,6 +80,9 @@
   <div id="toast" role="status"></div>
 
   <!-- Application Scripts -->
+  <script src="js/config.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/sync.js"></script>
   <script src="js/logo.js"></script>
   <script src="js/app.js"></script>
 </body>

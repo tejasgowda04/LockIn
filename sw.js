@@ -1,8 +1,11 @@
-const V = "lockin-v2",
+const V = "lockin-v3",
   SHELL = [
     "./",
     "index.html",
     "css/style.css",
+    "js/config.js",
+    "js/auth.js",
+    "js/sync.js",
     "js/logo.js",
     "js/app.js",
     "manifest.webmanifest",
