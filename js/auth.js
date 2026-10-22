@@ -1,9 +1,13 @@
 /**
  * ====================================================================
- * LockIn – Firebase Authentication Controller
+ * LockIn – Authentication & Onboarding Controller
  * ====================================================================
- * Handles Google OAuth, Email/Password sign up & sign in, session
- * persistence, and user profile management.
+ * Handles:
+ * - Cinematic Name Reveal Splash Animation controller
+ * - Authentication Screen UI & State Machine (from auth.html reference)
+ * - Firebase Google OAuth & Email/Password Sign Up & Sign In
+ * - Post-Registration Profile Onboarding Workflow
+ * - Supabase PostgreSQL Cloud Sync Session Handshake
  * ====================================================================
  */
 
@@ -11,11 +15,24 @@ var LockinAuth = (function () {
   var _currentUser = null;
   var _initialized = false;
   var _authInstance = null;
+  var _initialAuthResolved = false;
+  var _initialAuthCallback = null;
+  var _splashDismissed = false;
+
+  var _authReadyPromise = new Promise(function (resolve) {
+    _initialAuthCallback = resolve;
+  });
 
   function init() {
     if (_initialized) return;
+
+    // Check if Firebase is available and configured
     if (typeof firebase === "undefined" || !isFirebaseConfigured()) {
-      console.log("LockIn: Firebase not configured. Running in Local Mode.");
+      console.log("LockIn: Firebase not configured or offline mode.");
+      _initialAuthResolved = true;
+      if (_initialAuthCallback) _initialAuthCallback(null);
+      initSplashAndAuth();
+      initAuthUI();
       return;
     }
 
@@ -35,8 +52,7 @@ var LockinAuth = (function () {
           // Sync with Supabase
           if (typeof LockinSync !== "undefined" && isSupabaseConfigured()) {
             LockinSync.loadUserData(user.uid).then(function (hasData) {
-              // If cloud is empty but local has trades, ask if user wants to sync them
-              if (!hasData && S && S.trades && S.trades.length > 0) {
+              if (!hasData && typeof S !== "undefined" && S.trades && S.trades.length > 0) {
                 checkLocalDataMigration(user);
               }
             });
@@ -44,10 +60,26 @@ var LockinAuth = (function () {
         } else {
           console.log("LockIn: No user signed in (Local/Guest mode).");
         }
+
+        if (!_initialAuthResolved) {
+          _initialAuthResolved = true;
+          if (_initialAuthCallback) _initialAuthCallback(user);
+        }
       });
+
+      initSplashAndAuth();
+      initAuthUI();
     } catch (err) {
       console.error("LockIn Auth initialization failed:", err);
+      _initialAuthResolved = true;
+      if (_initialAuthCallback) _initialAuthCallback(null);
+      initSplashAndAuth();
+      initAuthUI();
     }
+  }
+
+  function waitForInitialAuth() {
+    return _authReadyPromise;
   }
 
   function getCurrentUser() {
@@ -65,13 +97,13 @@ var LockinAuth = (function () {
           _currentUser.photoURL +
           '" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">';
       } else {
-        var name = _currentUser.displayName || _currentUser.email || "Trader";
+        var name = _currentUser.displayName || _currentUser.email || (typeof S !== "undefined" && S.profile && S.profile.name) || "Trader";
         avBtn.textContent = name.charAt(0).toUpperCase();
       }
       avBtn.title = _currentUser.displayName || _currentUser.email || "My Account";
     } else {
       avBtn.textContent =
-        S && S.profile && S.profile.name
+        typeof S !== "undefined" && S.profile && S.profile.name
           ? S.profile.name.charAt(0).toUpperCase()
           : "T";
       avBtn.title = "Profile & Account";
@@ -79,6 +111,7 @@ var LockinAuth = (function () {
   }
 
   function checkLocalDataMigration(user) {
+    if (typeof S === "undefined" || !S.trades) return;
     var count = S.trades.length;
     var html =
       "<h2>Sync Local Trades to Cloud? ☁️</h2>" +
@@ -91,173 +124,445 @@ var LockinAuth = (function () {
       '<button class="pri" style="flex:1" onclick="LockinSync.saveUserData(true);closeM();toast(\'Trades synced to cloud!\')">Upload My Trades</button>' +
       '<button class="ghost" style="flex:1" onclick="closeM()">Keep Separate</button>' +
       "</div>";
-    modal(html);
+    if (typeof modal === "function") modal(html);
   }
 
+  /* ====================================================================
+   * Splash Screen Controller
+   * ==================================================================== */
+  function initSplashAndAuth() {
+    var splash = document.querySelector("#splash-screen");
+    if (!splash) return;
+
+    var minDelay = new Promise(function (resolve) {
+      setTimeout(resolve, 2100);
+    });
+
+    // Skip on tap/click
+    splash.addEventListener("click", function () {
+      dismissSplash();
+    });
+
+    // When minimum animation duration passes and initial auth resolves:
+    Promise.all([minDelay, waitForInitialAuth()]).then(function () {
+      dismissSplash();
+    });
+
+    // Fallback safety timeout (max 3.5s)
+    setTimeout(function () {
+      dismissSplash();
+    }, 3500);
+  }
+
+  function dismissSplash() {
+    if (_splashDismissed) return;
+    _splashDismissed = true;
+
+    var splash = document.querySelector("#splash-screen");
+    if (splash) {
+      splash.classList.add("splash-hidden");
+      setTimeout(function () {
+        splash.style.display = "none";
+      }, 600);
+    }
+
+    document.body.classList.remove("splash-active");
+
+    // If user is already authenticated -> reveal dashboard
+    if (_currentUser) {
+      hideAuthScreen();
+      if (typeof render === "function") render();
+    } else {
+      // If not authenticated -> reveal Auth Screen
+      showAuthScreen();
+    }
+  }
+
+  /* ====================================================================
+   * Auth Screen Visibility Controller
+   * ==================================================================== */
+  function showAuthScreen() {
+    var authScreen = document.querySelector("#auth-screen");
+    if (authScreen) {
+      authScreen.classList.remove("auth-hidden");
+      authScreen.style.display = "flex";
+    }
+    document.body.classList.add("auth-active");
+  }
+
+  function hideAuthScreen() {
+    var authScreen = document.querySelector("#auth-screen");
+    if (authScreen) {
+      authScreen.classList.add("auth-hidden");
+      setTimeout(function () {
+        authScreen.style.display = "none";
+      }, 400);
+    }
+    document.body.classList.remove("auth-active");
+    if (typeof render === "function") render();
+  }
+
+  /* ====================================================================
+   * Auth API Methods
+   * ==================================================================== */
   function signInWithGoogle() {
     if (!_authInstance) {
-      toast("Firebase keys need to be added to js/config.js first.");
-      return Promise.reject("Firebase not configured");
+      if (typeof toast === "function") toast("Firebase keys need to be added to js/config.js first.");
+      return Promise.reject(new Error("Firebase not configured"));
     }
     var provider = new firebase.auth.GoogleAuthProvider();
-    return _authInstance.signInWithPopup(provider).catch(function (error) {
-      toast(error.message || "Google sign in failed");
-      throw error;
-    });
+    return _authInstance.signInWithPopup(provider);
   }
 
   function signInWithEmail(email, password) {
     if (!_authInstance) {
-      toast("Firebase keys need to be added to js/config.js first.");
-      return Promise.reject("Firebase not configured");
+      if (typeof toast === "function") toast("Firebase keys need to be added to js/config.js first.");
+      return Promise.reject(new Error("Firebase not configured"));
     }
-    return _authInstance
-      .signInWithEmailAndPassword(email, password)
-      .catch(function (error) {
-        toast(error.message || "Sign in failed");
-        throw error;
-      });
+    return _authInstance.signInWithEmailAndPassword(email, password);
   }
 
   function signUpWithEmail(email, password, displayName) {
     if (!_authInstance) {
-      toast("Firebase keys need to be added to js/config.js first.");
-      return Promise.reject("Firebase not configured");
+      if (typeof toast === "function") toast("Firebase keys need to be added to js/config.js first.");
+      return Promise.reject(new Error("Firebase not configured"));
     }
     return _authInstance
       .createUserWithEmailAndPassword(email, password)
       .then(function (result) {
         if (displayName && result.user) {
-          return result.user.updateProfile({ displayName: displayName });
+          return result.user.updateProfile({ displayName: displayName }).then(function () {
+            return result;
+          });
         }
-      })
-      .catch(function (error) {
-        toast(error.message || "Registration failed");
-        throw error;
+        return result;
       });
   }
 
   function signOut() {
-    if (!_authInstance) return Promise.resolve();
+    if (!_authInstance) {
+      _currentUser = null;
+      updateUserUI();
+      showAuthScreen();
+      return Promise.resolve();
+    }
     return _authInstance.signOut().then(function () {
       _currentUser = null;
       updateUserUI();
-      toast("Signed out successfully");
-      render();
+      if (typeof toast === "function") toast("Signed out successfully");
+      showAuthScreen();
     });
   }
 
+  /* ====================================================================
+   * Interactive Auth Screen UI Controller (from auth.html reference)
+   * ==================================================================== */
+  function initAuthUI() {
+    var card = document.querySelector("#auth-card");
+    if (!card) return;
+
+    var mode = "login";
+    var busy = false;
+    var T = {
+      login: ["Welcome back", "Log in to continue your journal.", "Log in"],
+      signup: ["Create your account", "Start journaling your edge today.", "Create account"]
+    };
+
+    function setMode(m) {
+      mode = m;
+      card.dataset.mode = m;
+      var tabLogin = document.querySelector("#tab-login");
+      var tabSignup = document.querySelector("#tab-signup");
+      if (tabLogin && tabSignup) {
+        tabLogin.classList.toggle("on", m === "login");
+        tabSignup.classList.toggle("on", m === "signup");
+        tabLogin.setAttribute("aria-selected", m === "login");
+        tabSignup.setAttribute("aria-selected", m === "signup");
+      }
+      var authTitle = document.querySelector("#auth-title");
+      var authSub = document.querySelector("#auth-sub");
+      var authSubmit = document.querySelector("#auth-submit");
+      if (authTitle) authTitle.textContent = T[m][0];
+      if (authSub) authSub.textContent = T[m][1];
+      if (authSubmit && !busy) authSubmit.textContent = T[m][2];
+
+      var passInput = document.querySelector("#auth-password");
+      if (passInput) passInput.autocomplete = m === "login" ? "current-password" : "new-password";
+      setError("");
+    }
+
+    function setError(msg) {
+      var errEl = document.querySelector("#auth-error");
+      if (errEl) errEl.textContent = msg || "";
+    }
+
+    function setNotice(html) {
+      var n = document.querySelector("#auth-notice");
+      if (!n) return;
+      n.hidden = !html;
+      n.innerHTML = html || "";
+    }
+
+    function setLoading(b) {
+      busy = !!b;
+      var s = document.querySelector("#auth-submit");
+      if (!s) return;
+      s.disabled = busy;
+      s.innerHTML = busy
+        ? '<span class="auth-spin"></span> ' + (mode === "login" ? "Logging in…" : "Creating account…")
+        : T[mode][2];
+    }
+
+    function bad(selector, on) {
+      var el = document.querySelector(selector);
+      if (!el) return;
+      var f = el.closest(".auth-f");
+      if (f) f.classList.toggle("bad", !!on);
+    }
+
+    // Tab buttons
+    var tabLogin = document.querySelector("#tab-login");
+    var tabSignup = document.querySelector("#tab-signup");
+    if (tabLogin) tabLogin.onclick = function () { setMode("login"); };
+    if (tabSignup) tabSignup.onclick = function () { setMode("signup"); };
+
+    // Password visibility toggle
+    var eyeBtn = document.querySelector("#auth-eye");
+    if (eyeBtn) {
+      eyeBtn.onclick = function () {
+        var p1 = document.querySelector("#auth-password");
+        var p2 = document.querySelector("#auth-confirm");
+        var show = p1 && p1.type === "password";
+        if (p1) p1.type = show ? "text" : "password";
+        if (p2) p2.type = show ? "text" : "password";
+        this.classList.toggle("show", show);
+      };
+    }
+
+    // Password strength meter
+    var passInput = document.querySelector("#auth-password");
+    if (passInput) {
+      passInput.addEventListener("input", function () {
+        var v = this.value;
+        var sc =
+          (v.length >= 6) +
+          (v.length >= 10) +
+          (/[A-Z]/.test(v) && /[a-z]/.test(v)) +
+          (/\d/.test(v)) +
+          (/[^A-Za-z0-9]/.test(v));
+        var m = document.querySelector("#auth-meter-bar");
+        var hint = document.querySelector("#auth-meter-hint");
+        if (m) {
+          m.style.width = (sc / 5 * 100) + "%";
+          m.style.background = sc <= 1 ? "#EF4444" : sc <= 3 ? "#F59E0B" : "#22C55E";
+        }
+        if (hint) {
+          hint.textContent = !v
+            ? "Use 8+ characters with a mix of letters & numbers."
+            : sc <= 1
+            ? "Weak. Add more characters."
+            : sc <= 3
+            ? "Getting there. Add numbers or symbols."
+            : "Strong password.";
+        }
+      });
+    }
+
+    // Clear error on input
+    ["#auth-name", "#auth-email", "#auth-password", "#auth-confirm"].forEach(function (id) {
+      var el = document.querySelector(id);
+      if (el) {
+        el.addEventListener("input", function () {
+          bad(id, false);
+          setError("");
+        });
+      }
+    });
+
+    // Form submit
+    var form = document.querySelector("#auth-form");
+    if (form) {
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        if (busy) return;
+
+        var nameVal = (document.querySelector("#auth-name") ? document.querySelector("#auth-name").value.trim() : "");
+        var emailVal = (document.querySelector("#auth-email") ? document.querySelector("#auth-email").value.trim() : "");
+        var passVal = (document.querySelector("#auth-password") ? document.querySelector("#auth-password").value : "");
+        var confirmVal = (document.querySelector("#auth-confirm") ? document.querySelector("#auth-confirm").value : "");
+
+        ["#auth-name", "#auth-email", "#auth-password", "#auth-confirm"].forEach(function (id) {
+          bad(id, false);
+        });
+
+        if (mode === "signup" && !nameVal) {
+          bad("#auth-name", true);
+          setError("Add your name / trader handle.");
+          return;
+        }
+        if (!/^\S+@\S+\.\S+$/.test(emailVal)) {
+          bad("#auth-email", true);
+          setError("Enter a valid email address.");
+          return;
+        }
+        if (!passVal) {
+          bad("#auth-password", true);
+          setError("Enter your password.");
+          return;
+        }
+        if (mode === "signup") {
+          if (passVal.length < 6) {
+            bad("#auth-password", true);
+            setError("Use at least 6 characters for your password.");
+            return;
+          }
+          if (passVal !== confirmVal) {
+            bad("#auth-confirm", true);
+            setError("Passwords don’t match.");
+            return;
+          }
+        }
+
+        setError("");
+        setLoading(true);
+
+        if (mode === "signup") {
+          // --- USER REGISTRATION ---
+          signUpWithEmail(emailVal, passVal, nameVal)
+            .then(function () {
+              setLoading(false);
+              // Save registered name into profile state
+              if (typeof S !== "undefined") {
+                if (!S.profile) S.profile = {};
+                S.profile.name = nameVal;
+                if (typeof save === "function") save();
+              }
+              hideAuthScreen();
+              if (typeof toast === "function") toast("Account created! Welcome to LockIn.");
+
+              // REQUIREMENT: AFTER REGISTER ONLY, ASK ABOUT PROFILE SETTINGS
+              setTimeout(function () {
+                if (typeof profileForm === "function") {
+                  profileForm(true);
+                }
+              }, 350);
+            })
+            .catch(function (err) {
+              setLoading(false);
+              setError(err.message || "Registration failed.");
+            });
+        } else {
+          // --- USER LOGIN ---
+          signInWithEmail(emailVal, passVal)
+            .then(function () {
+              setLoading(false);
+              hideAuthScreen();
+              if (typeof toast === "function") toast("Welcome back!");
+              // Note: Do NOT open profileForm on login!
+            })
+            .catch(function (err) {
+              setLoading(false);
+              setError(err.message || "Invalid email or password.");
+            });
+        }
+      });
+    }
+
+    // Google Sign-In button
+    var googleBtn = document.querySelector("#auth-google");
+    if (googleBtn) {
+      googleBtn.onclick = function () {
+        setError("");
+        signInWithGoogle()
+          .then(function (result) {
+            var isNewUser = false;
+            if (result && result.additionalUserInfo && result.additionalUserInfo.isNewUser) {
+              isNewUser = true;
+            } else if (typeof S !== "undefined" && (!S.profile || !S.profile.name)) {
+              isNewUser = true;
+            }
+
+            hideAuthScreen();
+
+            if (isNewUser) {
+              if (result && result.user && result.user.displayName && typeof S !== "undefined") {
+                if (!S.profile) S.profile = {};
+                S.profile.name = result.user.displayName;
+                if (typeof save === "function") save();
+              }
+              if (typeof toast === "function") toast("Welcome to LockIn! Let's set up your profile.");
+              setTimeout(function () {
+                if (typeof profileForm === "function") {
+                  profileForm(true);
+                }
+              }, 350);
+            } else {
+              if (typeof toast === "function") toast("Welcome back!");
+            }
+          })
+          .catch(function (err) {
+            if (err && err.code !== "auth/popup-closed-by-user") {
+              setError(err.message || "Google sign in failed.");
+            }
+          });
+      };
+    }
+
+    // Forgot password button
+    var forgotBtn = document.querySelector("#auth-forgot");
+    if (forgotBtn) {
+      forgotBtn.onclick = function () {
+        var emailInput = document.querySelector("#auth-email");
+        var em = emailInput ? emailInput.value.trim() : "";
+        if (!/^\S+@\S+\.\S+$/.test(em)) {
+          bad("#auth-email", true);
+          setError("Type your email above first, then tap Forgot password.");
+          return;
+        }
+        if (!_authInstance) {
+          setError("Firebase auth not configured.");
+          return;
+        }
+        _authInstance
+          .sendPasswordResetEmail(em)
+          .then(function () {
+            setNotice("Password reset link sent to <b>" + esc(em) + "</b>! Please check your email.");
+            setError("");
+          })
+          .catch(function (err) {
+            setError(err.message || "Failed to send reset link.");
+          });
+      };
+    }
+
+    // Continue as guest button
+    var guestBtn = document.querySelector("#auth-guest");
+    if (guestBtn) {
+      guestBtn.onclick = function () {
+        hideAuthScreen();
+        if (typeof toast === "function") toast("Exploring in Guest Mode (Offline)");
+      };
+    }
+
+    // Theme toggle on Auth screen
+    var themeToggle = document.querySelector("#auth-theme-toggle");
+    if (themeToggle) {
+      themeToggle.onclick = function () {
+        if (typeof toggleTheme === "function") {
+          toggleTheme();
+        } else {
+          var cur = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+          document.documentElement.setAttribute("data-theme", cur);
+          try { localStorage.setItem("ascend1t", cur); } catch (e) {}
+        }
+      };
+    }
+
+    setMode("login");
+  }
+
   function showAuthModal() {
-    if (!isFirebaseConfigured()) {
-      toast("Please add your Firebase keys to js/config.js to enable cloud login.");
-      return;
-    }
-
-    var isUserLoggedIn = Boolean(_currentUser);
-
-    if (isUserLoggedIn) {
-      var email = _currentUser.email || "Anonymous";
-      var name = _currentUser.displayName || "Trader";
-      var html =
-        "<h2>My Cloud Account 🔐</h2>" +
-        '<div class="card" style="margin:16px 0;display:flex;gap:14px;align-items:center;">' +
-        '<div class="av" style="width:48px;height:48px;font-size:20px;">' +
-        (_currentUser.photoURL
-          ? '<img src="' +
-            _currentUser.photoURL +
-            '" style="width:100%;height:100%;border-radius:50%;">'
-          : name.charAt(0).toUpperCase()) +
-        "</div>" +
-        "<div>" +
-        "<b>" +
-        esc(name) +
-        "</b>" +
-        '<small class="mut" style="display:block;">' +
-        esc(email) +
-        "</small>" +
-        '<span class="badge b-fd" style="margin-top:4px;">Cloud Synced</span>' +
-        "</div>" +
-        "</div>" +
-        '<div style="display:flex;flex-direction:column;gap:10px;">' +
-        '<button class="pri" onclick="LockinSync.saveUserData(true);toast(\'Data synced to Supabase!\');">Sync Now to Supabase</button>' +
-        '<button class="ghost" style="color:var(--dn);border-color:rgba(239,68,68,0.3);" onclick="LockinAuth.signOut();closeM();">Sign Out</button>' +
-        "</div>";
-      modal(html);
-      return;
-    }
-
-    // Login / Sign Up Form
-    var authHtml =
-      "<h2>Sign in to LockIn 🔒</h2>" +
-      '<p class="mut" style="margin:4px 0 16px;">Sync your trading journal & chart screenshots across all devices.</p>' +
-      '<button class="pri" style="width:100%;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:10px;" onclick="LockinAuth.signInWithGoogle().then(function(){closeM();toast(\'Welcome!\');})">' +
-      '<svg width="18" height="18" viewBox="0 0 24 24"><path fill="#fff" d="M21.35 11.1h-9.17v2.98h5.27c-.23 1.25-.94 2.31-2 3.02v2.51h3.24c1.9-1.75 2.99-4.32 2.99-7.41 0-.74-.06-1.45-.19-2.1z"/><path fill="#fff" d="M12.18 21.43c2.72 0 5-1.12 6.67-3.03l-3.24-2.51c-.9.6-2.06.96-3.43.96-2.63 0-4.86-1.77-5.66-4.16h-3.35v2.6c1.66 3.28 5.07 5.14 8.01 5.14z"/><path fill="#fff" d="M6.52 12.69c-.21-.6-.32-1.25-.32-1.92s.11-1.32.32-1.92v-2.6h-3.35c-.68 1.36-1.07 2.9-1.07 4.52s.39 3.16 1.07 4.52l3.35-2.6z"/><path fill="#fff" d="M12.18 4.09c1.48 0 2.81.51 3.86 1.51l2.89-2.89c-1.75-1.63-4.04-2.63-6.75-2.63-2.94 0-6.35 1.86-8.01 5.14l3.35 2.6c.8-2.39 3.03-4.16 5.66-4.16z"/></svg>' +
-      "Continue with Google" +
-      "</button>" +
-      '<div style="text-align:center;color:var(--mut);font-size:12px;margin-bottom:14px;position:relative;">' +
-      '<span style="background:var(--sheet);padding:0 8px;position:relative;z-index:1;">OR USE EMAIL</span>' +
-      '<div style="position:absolute;top:50%;left:0;right:0;height:1px;background:var(--line);z-index:0;"></div>' +
-      "</div>" +
-      '<div id="authTabs" class="seg" style="display:flex;gap:6px;margin-bottom:12px;">' +
-      '<button class="on" style="flex:1;" onclick="LockinAuth.switchAuthTab(\'login\')">Login</button>' +
-      '<button style="flex:1;" onclick="LockinAuth.switchAuthTab(\'signup\')">Register</button>' +
-      "</div>" +
-      '<div id="authFormBody">' +
-      "<label>Email Address</label>" +
-      '<input id="authEmail" type="email" placeholder="trader@example.com" autocomplete="email">' +
-      '<div id="authNameGroup" style="display:none;">' +
-      "<label>Your Name / Handle</label>" +
-      '<input id="authName" type="text" placeholder="e.g. Alex" autocomplete="name">' +
-      "</div>" +
-      "<label>Password</label>" +
-      '<input id="authPass" type="password" placeholder="••••••••" autocomplete="current-password">' +
-      '<button id="authSubmitBtn" class="pri" style="width:100%;margin-top:14px;" onclick="LockinAuth.handleAuthSubmit()">Sign In</button>' +
-      "</div>" +
-      '<div style="margin-top:12px;text-align:center;">' +
-      '<button class="ghost" style="font-size:13px;border:none;color:var(--mut);" onclick="closeM()">Continue Offline / Guest Mode</button>' +
-      "</div>";
-
-    modal(authHtml);
-  }
-
-  var _authMode = "login";
-  function switchAuthTab(mode) {
-    _authMode = mode;
-    var tabs = document.querySelectorAll("#authTabs button");
-    if (tabs.length === 2) {
-      tabs[0].className = mode === "login" ? "on" : "";
-      tabs[1].className = mode === "signup" ? "on" : "";
-    }
-    var nameGroup = document.querySelector("#authNameGroup");
-    var submitBtn = document.querySelector("#authSubmitBtn");
-    if (nameGroup) nameGroup.style.display = mode === "signup" ? "block" : "none";
-    if (submitBtn)
-      submitBtn.textContent = mode === "signup" ? "Create Free Account" : "Sign In";
-  }
-
-  function handleAuthSubmit() {
-    var email = document.querySelector("#authEmail").value.trim();
-    var pass = document.querySelector("#authPass").value;
-    var name = document.querySelector("#authName")
-      ? document.querySelector("#authName").value.trim()
-      : "";
-
-    if (!email || !pass) {
-      toast("Please fill in email and password");
-      return;
-    }
-
-    if (_authMode === "signup") {
-      signUpWithEmail(email, pass, name).then(function () {
-        closeM();
-        toast("Account created successfully! Welcome to LockIn.");
-      });
-    } else {
-      signInWithEmail(email, pass).then(function () {
-        closeM();
-        toast("Welcome back!");
-      });
-    }
+    showAuthScreen();
   }
 
   return {
@@ -268,7 +573,8 @@ var LockinAuth = (function () {
     signUpWithEmail: signUpWithEmail,
     signOut: signOut,
     showAuthModal: showAuthModal,
-    switchAuthTab: switchAuthTab,
-    handleAuthSubmit: handleAuthSubmit,
+    showAuthScreen: showAuthScreen,
+    hideAuthScreen: hideAuthScreen,
+    waitForInitialAuth: waitForInitialAuth,
   };
 })();

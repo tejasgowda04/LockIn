@@ -115,19 +115,35 @@ var LockinSync = (function () {
 
         if (acctsRes.data && acctsRes.data.length > 0) {
           S.accts = acctsRes.data.map(function (row) {
+            var r = row.rules || {};
+            var statusVal = r.status || row.status || "Evaluation";
+            var firmName = r.firm || row.name || "Account";
             return {
               id: row.id,
-              name: row.name,
-              size: row.size,
-              cur: row.currency,
-              st: row.status,
-              bal: row.balance,
-              maxdd: row.max_dd,
-              ddd: row.daily_dd,
-              prof: row.profit_target,
-              ph: row.phase,
-              rule: (row.rules && row.rules.rule) || "",
-              fav: row.is_favorite,
+              firm: firmName,
+              name: firmName,
+              size: Number(row.size) || 0,
+              cur: row.currency || "USD",
+              status: statusVal,
+              st: statusVal,
+              bal: Number(row.balance) || 0,
+              cost: Number(r.cost) || 0,
+              market: r.market || "Futures",
+              type: r.type || "One Step",
+              split: Number(r.split) || 80,
+              notes: r.notes || "",
+              label: r.label || "",
+              date: r.date || "",
+              maxdd: Number(row.max_dd) || 10,
+              ddd: Number(row.daily_dd) || 5,
+              prof: Number(row.profit_target) || 8,
+              ph: row.phase || "PHASE 1",
+              fav: Boolean(row.is_favorite),
+              hist: Array.isArray(r.hist)
+                ? r.hist
+                : r.date
+                  ? [{ d: r.date, s: statusVal, n: "Purchased" }]
+                  : [],
             };
           });
         }
@@ -136,12 +152,14 @@ var LockinSync = (function () {
           S.pays = paysRes.data.map(function (row) {
             return {
               id: row.id,
+              acc: row.account_id,
               aid: row.account_id,
+              date: row.payout_date,
               d: row.payout_date,
-              amt: row.amount,
-              net: row.net,
-              split: row.split,
-              fee: row.fee,
+              amt: Number(row.amount) || 0,
+              net: Number(row.net || row.amount) || 0,
+              split: Number(row.split) || 80,
+              fee: Number(row.fee) || 0,
             };
           });
         }

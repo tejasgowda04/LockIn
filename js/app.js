@@ -3408,13 +3408,24 @@ function ptile(l, v, d, sg, c, x, i, ic, p) {
  * 17. Prop Firm Accounts & Payout Tracker
  * ==================================================================== */
 function propTab() {
+  if (!S.accts) S.accts = [];
+  if (!S.pays) S.pays = [];
+  S.accts.forEach(function (a) {
+    if (!a.firm && a.name) a.firm = a.name;
+    if (!a.status && a.st) a.status = a.st;
+    if (!a.status) a.status = "Evaluation";
+    if (!Array.isArray(a.hist)) {
+      a.hist = a.date ? [{ d: a.date, s: a.status, n: "Purchased" }] : [];
+    }
+  });
+
   var A = S.accts,
     Y = S.pays,
     spent = A.reduce((x, a) => x + (+a.cost || 0), 0),
     paid = Y.reduce((x, p) => x + (+p.amt || 0), 0),
     elig = A.filter((a) => a.type !== "Instant"),
     ever = elig.filter((a) =>
-      a.hist.some((h) => h.s === "Passed" || h.s === "Funded"),
+      (a.hist || []).some((h) => h.s === "Passed" || h.s === "Funded"),
     ).length,
     fd = A.filter((a) => a.status === "Funded").length,
     bl = A.filter((a) => a.status === "Blown").length,
@@ -3424,12 +3435,12 @@ function propTab() {
       .reverse(),
     ev = [];
   A.forEach((a) =>
-    a.hist.forEach((h, k) => {
+    (a.hist || []).forEach((h, k) => {
       var pu = k === 0;
       ev.push({
         d: h.d,
         t: pu ? "Account purchased" : "Marked " + h.s,
-        s: esc(a.firm) + " · " + money(a.size),
+        s: esc(a.firm || a.name || "Account") + " · " + money(a.size),
         amt: pu ? -a.cost : null,
         ic: pu
           ? "🛒"
@@ -3444,11 +3455,11 @@ function propTab() {
     }),
   );
   Y.forEach((p) => {
-    var a = A.filter((x) => x.id === p.acc)[0];
+    var a = A.filter((x) => x.id === (p.acc || p.aid))[0];
     ev.push({
-      d: p.date,
+      d: p.date || p.d,
       t: "Payout received",
-      s: a ? esc(a.firm) + " · " + money(a.size) : "",
+      s: a ? esc(a.firm || a.name || "Account") + " · " + money(a.size) : "",
       amt: p.amt,
       ic: "💸",
     });
@@ -3730,14 +3741,18 @@ function acctForm() {
 function acctView(id) {
   var a = S.accts.filter((x) => x.id === id)[0];
   if (!a) return;
-  var py = S.pays.filter((p) => p.acc === id),
+  if (!a.firm && a.name) a.firm = a.name;
+  if (!a.status && a.st) a.status = a.st;
+  if (!a.status) a.status = "Evaluation";
+  if (!Array.isArray(a.hist)) a.hist = [];
+  var py = S.pays.filter((p) => (p.acc || p.aid) === id),
     pt = py.reduce((x, p) => x + (+p.amt || 0), 0),
     n = pt - (+a.cost || 0),
-    ev = a.hist
+    ev = (a.hist || [])
       .map((h) => ({ d: h.d, t: h.s + (h.n ? " · " + h.n : "") }))
       .concat(
         py.map((p) => ({
-          d: p.date,
+          d: p.date || p.d,
           t: "Payout " + money(p.amt) + (p.note ? " · " + p.note : ""),
           p: 1,
         })),
@@ -3745,9 +3760,9 @@ function acctView(id) {
       .sort((x, y) => (x.d < y.d ? -1 : x.d > y.d ? 1 : 0));
   var v = modal(
     "<h2>" +
-      esc(a.firm) +
+      esc(a.firm || a.name || "Account") +
       ' <span class="badge b-' +
-      SC[a.status] +
+      (SC[a.status] || "ev") +
       '">' +
       a.status +
       '</span></h2><p class="mut">' +
@@ -3913,15 +3928,26 @@ function go(t) {
  * 18. App Router & Navigation Controller
  * ==================================================================== */
 function render() {
-  var hh = {
-    home: home,
-    trades: trades,
-    cal: cal,
-    journal: journal,
-    prop: propTab,
-    risk: riskTab,
-    me: me,
-  }[tab]();
+  var hh = "";
+  try {
+    hh = {
+      home: home,
+      trades: trades,
+      cal: cal,
+      journal: journal,
+      prop: propTab,
+      risk: riskTab,
+      me: me,
+    }[tab]();
+  } catch (err) {
+    console.error("Render error on tab " + tab + ":", err);
+    hh =
+      '<div class="card" style="margin:20px 0;"><h3 style="color:var(--dn)">Error loading ' +
+      esc(tab) +
+      '</h3><p class="mut">' +
+      esc(err.message) +
+      '</p><button class="pri" onclick="go(\'home\')">Go to Dashboard</button></div>';
+  }
   $("#app").innerHTML =
     tab === "home" || tab === "prop" ? hh : '<div class="pg">' + hh + "</div>";
   var IC = {
@@ -4087,10 +4113,7 @@ setInterval(function () {
 /* ====================================================================
  * 20. Application Bootstrap & Initialization
  * ==================================================================== */
-if (!S.profile.name)
-  setTimeout(function () {
-    if (!$(".veil")) profileForm(true);
-  }, 700);
+// Note: Profile settings onboarding is now triggered strictly after registration via LockinAuth.
 
 // Initialize Cloud Authentication & Database Synchronization
 if (typeof LockinAuth !== "undefined") {

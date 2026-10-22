@@ -1,4 +1,4 @@
-const V = "lockin-v3",
+const V = "lockin-v4",
   SHELL = [
     "./",
     "index.html",
@@ -11,6 +11,7 @@ const V = "lockin-v3",
     "manifest.webmanifest",
     "icon-192.png",
     "icon-512.png",
+    "logo.png",
   ];
 
 self.addEventListener("install", (e) => {
