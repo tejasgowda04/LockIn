@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0F1318">
+  <meta name="theme-color" content="#f5f3fb">
   <meta name="description" content="LockIn – Modern trading journal with automated statistics, risk calculation, calendar tracking, and prop firm metrics.">
 
   <!-- PWA & Mobile Web App Meta -->
@@ -11,13 +11,13 @@
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="icon" type="image/png" href="icon-192.png">
 
-  <!-- Early Theme Detection: Prevents theme flicker on page load -->
+  <!-- Early Theme Detection: Default is Light Theme -->
   <script>
     try {
       var t0 = localStorage.getItem("ascend1t");
       document.documentElement.setAttribute(
         "data-theme",
-        t0 || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
+        t0 || "light"
       );
     } catch (e) {}
   </script>

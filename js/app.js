@@ -4081,7 +4081,7 @@ document.head.appendChild(fl);
 var LGI = new Image();
 LGI.src = LOGO;
 load();
-setTheme(document.documentElement.getAttribute("data-theme") || "dark");
+setTheme(document.documentElement.getAttribute("data-theme") || "light");
 if (!S.profile) S.profile = {};
 if (!S.accts) S.accts = [];
 if (!S.pays) S.pays = [];
