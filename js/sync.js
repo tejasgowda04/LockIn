@@ -81,22 +81,31 @@ var LockinSync = (function () {
           S.trades = tradesRes.data.map(function (row) {
             return {
               id: row.id,
+              date: row.trade_date,
               d: row.trade_date,
+              inst: row.symbol,
               sym: row.symbol,
-              act: row.action,
+              side: row.action || "Long",
+              act: row.action || "Long",
+              entry: row.entry,
               ent: row.entry,
               sl: row.sl,
               tp: row.tp,
+              size: row.size,
               sz: row.size,
               exit: row.exit_price,
-              pnl: row.pnl,
-              r: row.r_multiple,
+              pnl: Number(row.pnl) || 0,
+              r: row.r_multiple != null ? row.r_multiple : "",
               res: row.result,
-              setup: row.setup,
-              mist: row.mistake,
-              notes: row.notes,
-              mood: row.mood,
-              acct: row.account_id,
+              setup: row.setup || "",
+              grade: row.grade || "",
+              mistake: row.mistake || "None",
+              mist: row.mistake || "None",
+              notes: row.notes || "",
+              mood: row.mood || "",
+              acc: row.account_id || "",
+              acct: row.account_id || "",
+              sh: row.screenshots || [],
               shots: row.screenshots || [],
             };
           });
@@ -213,23 +222,23 @@ var LockinSync = (function () {
       return {
         id: t.id,
         user_id: userId,
-        trade_date: t.d,
-        symbol: t.sym,
-        action: t.act,
-        entry: t.ent != null ? Number(t.ent) : null,
-        sl: t.sl != null ? Number(t.sl) : null,
-        tp: t.tp != null ? Number(t.tp) : null,
-        size: t.sz != null ? Number(t.sz) : null,
-        exit_price: t.exit != null ? Number(t.exit) : null,
+        trade_date: t.date || t.d || new Date().toISOString().slice(0, 10),
+        symbol: t.inst || t.sym || "Trade",
+        action: t.side || t.act || "Long",
+        entry: t.entry != null ? Number(t.entry) : t.ent != null ? Number(t.ent) : null,
+        sl: t.sl != null && t.sl !== "" ? Number(t.sl) : null,
+        tp: t.tp != null && t.tp !== "" ? Number(t.tp) : null,
+        size: t.size != null && t.size !== "" ? Number(t.size) : t.sz != null && t.sz !== "" ? Number(t.sz) : null,
+        exit_price: t.exit != null && t.exit !== "" ? Number(t.exit) : null,
         pnl: Number(t.pnl) || 0,
         r_multiple: t.r != null && t.r !== "" ? Number(t.r) : null,
-        result: t.res || null,
+        result: t.res || (Number(t.pnl) > 0 ? "Win" : Number(t.pnl) < 0 ? "Loss" : "BE"),
         setup: t.setup || "",
-        mistake: t.mist || "",
+        mistake: t.mistake || t.mist || "",
         notes: t.notes || "",
         mood: t.mood || "",
-        account_id: t.acct || "",
-        screenshots: t.shots || [],
+        account_id: t.acc || t.acct || "",
+        screenshots: t.sh || t.shots || [],
         updated_at: new Date().toISOString(),
       };
     });
@@ -252,17 +261,32 @@ var LockinSync = (function () {
       return {
         id: a.id,
         user_id: userId,
-        name: a.name || "",
+        name: a.firm || a.name || "",
         size: Number(a.size) || 0,
         currency: a.cur || "USD",
-        status: a.st || "ACTIVE",
+        status: a.status || a.st || "Evaluation",
         balance: Number(a.bal) || 0,
         max_dd: Number(a.maxdd) || 10,
         daily_dd: Number(a.ddd) || 5,
         profit_target: Number(a.prof) || 8,
         phase: a.ph || "PHASE 1",
-        rules: { rule: a.rule || "" },
+        rules: { rule: a.rule || "", split: a.split || 80, cost: a.cost || 0 },
         is_favorite: Boolean(a.fav),
+        updated_at: new Date().toISOString(),
+      };
+    });
+
+    // 5. Payouts Upsert
+    var paysRows = (S.pays || []).map(function (p) {
+      return {
+        id: p.id,
+        user_id: userId,
+        account_id: p.acc || p.aid || "",
+        payout_date: p.date || p.d || new Date().toISOString().slice(0, 10),
+        amount: Number(p.gross || p.amt) || 0,
+        net: Number(p.amt) || 0,
+        split: Number(p.split) || 80,
+        fee: Number(p.fee) || 0,
         updated_at: new Date().toISOString(),
       };
     });
@@ -291,6 +315,13 @@ var LockinSync = (function () {
           .upsert(acctsRows, { onConflict: "id,user_id" }),
       );
     }
+    if (paysRows.length > 0) {
+      promises.push(
+        client
+          .from("payouts")
+          .upsert(paysRows, { onConflict: "id,user_id" }),
+      );
+    }
 
     return Promise.all(promises)
       .then(function () {
@@ -317,6 +348,24 @@ var LockinSync = (function () {
       .eq("user_id", user.uid)
       .catch(function (err) {
         console.warn("Could not delete trade from cloud:", err);
+      });
+  }
+
+  /**
+   * Deletes a payout from Supabase
+   */
+  function deletePayout(payoutId) {
+    var user = LockinAuth.getCurrentUser();
+    var client = getClient();
+    if (!user || !client || !payoutId) return Promise.resolve();
+
+    return client
+      .from("payouts")
+      .delete()
+      .eq("id", payoutId)
+      .eq("user_id", user.uid)
+      .catch(function (err) {
+        console.warn("Could not delete payout from cloud:", err);
       });
   }
 
@@ -365,6 +414,7 @@ var LockinSync = (function () {
     loadUserData: loadUserData,
     saveUserData: saveUserData,
     deleteTrade: deleteTrade,
+    deletePayout: deletePayout,
     uploadScreenshot: uploadScreenshot,
   };
 })();

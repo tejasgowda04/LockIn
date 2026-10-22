@@ -1070,28 +1070,32 @@ function trList() {
       '<div class="item" onclick="tradeForm(\'' +
       t.id +
       "')\"><div><b>" +
-      esc(t.inst || "Trade") +
+      esc(t.inst || t.sym || "Trade") +
       '</b> <span class="mut">' +
-      esc(t.side) +
-      (t.size ? " · " + t.size : "") +
-      (t.entry ? " @ " + t.entry : "") +
+      esc(t.side || t.act || "Long") +
+      (t.size || t.sz ? " · " + (t.size || t.sz) : "") +
+      (t.entry || t.ent ? " @ " + (t.entry || t.ent) : "") +
       "</span>" +
       (t.grade ? '<span class="tag">' + esc(t.grade) + "</span>" : "") +
-      (t.acc ? '<span class="tag">' + esc(accName(t.acc)) + "</span>" : "") +
+      (t.acc || t.acct ? '<span class="tag">' + esc(accName(t.acc || t.acct)) + "</span>" : "") +
       (t.mistake && t.mistake !== "None"
         ? '<span class="tag">' + esc(t.mistake) + "</span>"
-        : "") +
+        : t.mist && t.mist !== "None"
+          ? '<span class="tag">' + esc(t.mist) + "</span>"
+          : "") +
       (t.ok ? "" : '<span class="tag">broke rules</span>') +
-      (t.sh && t.sh.length
-        ? '<span class="tag">📷 ' + t.sh.length + "</span>"
+      ((t.sh && t.sh.length) || (t.shots && t.shots.length)
+        ? '<span class="tag">📷 ' + ((t.sh && t.sh.length) || t.shots.length) + "</span>"
         : "") +
       '</div><div class="row2"><b class="' +
       (t.pnl >= 0 ? "up" : "dn") +
       '">' +
       fmt(+t.pnl || 0) +
-      '</b><button class="mini" aria-label="Share trade card" onclick="event.stopPropagation();tradeCard(\'' +
-      t.id +
-      "')\">⤴</button></div></div>";
+      '</b>' +
+      '<button class="mini" title="Edit trade" aria-label="Edit trade" onclick="event.stopPropagation();tradeForm(\'' + t.id + '\')">✏️</button>' +
+      '<button class="mini" title="Delete trade" aria-label="Delete trade" style="color:var(--dn)" onclick="event.stopPropagation();deleteTradeConfirm(\'' + t.id + '\')">🗑️</button>' +
+      '<button class="mini" aria-label="Share trade card" title="Share trade card" onclick="event.stopPropagation();tradeCard(\'' + t.id + '\')">⤴</button>' +
+      '</div></div>';
   });
   return h + "</div>";
 }
@@ -1476,14 +1480,56 @@ function slotH(k, l, src) {
 /* ====================================================================
  * 11. Trade Management & Entry Forms
  * ==================================================================== */
+function deleteTradeConfirm(id) {
+  var t = S.trades.filter((x) => x.id === id)[0];
+  var label = t
+    ? (t.inst || t.sym || "Trade") + " (" + fmt(+t.pnl || 0) + ")"
+    : "this trade";
+  if (!confirm("Are you sure you want to delete " + label + "?")) return;
+  var sh = (t && t.sh) || (t && t.shots) || [];
+  sh.forEach(function (k) {
+    shotDel(id + ":" + k).catch(function () {});
+  });
+  S.trades = S.trades.filter((x) => x.id !== id);
+  if (typeof LockinSync !== "undefined" && LockinSync.deleteTrade) {
+    LockinSync.deleteTrade(id);
+  }
+  save();
+  toast("Trade deleted");
+  render();
+}
+
 function tradeForm(id) {
   var P = S.profile,
-    t = S.trades.filter((x) => x.id === id)[0] || {
-      date: today(),
-      side: "Long",
-      mistake: "None",
-      chk: [],
-    },
+    raw = S.trades.filter((x) => x.id === id)[0],
+    t = raw
+      ? {
+          id: raw.id,
+          date: raw.date || raw.d || today(),
+          inst: raw.inst || raw.sym || "",
+          side: raw.side || raw.act || "Long",
+          pnl: raw.pnl != null ? raw.pnl : "",
+          r: raw.r != null ? raw.r : "",
+          size: raw.size != null ? raw.size : (raw.sz != null ? raw.sz : ""),
+          entry: raw.entry != null ? raw.entry : (raw.ent != null ? raw.ent : ""),
+          sl: raw.sl != null ? raw.sl : "",
+          tp: raw.tp != null ? raw.tp : "",
+          setup: raw.setup || "",
+          grade: raw.grade || "",
+          mistake: raw.mistake || raw.mist || "None",
+          notes: raw.notes || "",
+          ok: raw.ok != null ? raw.ok : true,
+          chk: raw.chk || [],
+          acc: raw.acc || raw.acct || "",
+          sh: raw.sh || raw.shots || [],
+        }
+      : {
+          date: today(),
+          side: "Long",
+          mistake: "None",
+          chk: [],
+          sh: [],
+        },
     rules = P.rules || [],
     pairs = P.pairs || [],
     chk = t.chk || [],
@@ -1492,7 +1538,7 @@ function tradeForm(id) {
   shp = {};
   var v = modal(
     "<h2>" +
-      (id ? "Edit trade" : "Log a trade") +
+      (id ? "Modify trade" : "Log a trade") +
       '</h2><label for="f_d">Date</label><input id="f_d" type="date" value="' +
       t.date +
       '"><label for="f_i">Instrument</label><input id="f_i" value="' +
@@ -1578,9 +1624,11 @@ function tradeForm(id) {
       '<label>Screenshots</label><div class="slots" id="f_sl2"></div><input id="f_file" type="file" accept="image/*" hidden>' +
       '<label for="f_n">Notes</label><textarea id="f_n">' +
       esc(t.notes || "") +
-      '</textarea><div class="row" style="margin-top:16px"><button class="pri" id="f_save">Save trade</button>' +
+      '</textarea><div class="row" style="margin-top:16px"><button class="pri" id="f_save">' +
+      (id ? "Update trade" : "Save trade") +
+      "</button>" +
       (id
-        ? '<button id="f_sh">Share card</button><button class="ghost dn" id="f_del">Delete</button>'
+        ? '<button id="f_sh">Share card</button><button class="ghost dn" id="f_del" style="color:var(--dn);border-color:rgba(239,68,68,0.4)">Delete trade</button>'
         : "") +
       "</div>",
   );
@@ -1693,30 +1741,38 @@ function tradeForm(id) {
     var o = {
       id: tid,
       date: $("#f_d").value || today(),
+      d: $("#f_d").value || today(),
       inst: $("#f_i").value.trim(),
+      sym: $("#f_i").value.trim(),
       side: $("#f_s").value,
+      act: $("#f_s").value,
       pnl: p,
       r: r === "" ? "" : parseFloat(r),
       setup: $("#f_st").value.trim(),
       grade: $("#f_g").value,
       mistake: $("#f_m").value,
+      mist: $("#f_m").value,
       notes: $("#f_n").value.trim(),
       ok: ok,
       chk: cs,
       acc: $("#f_ac").value,
+      acct: $("#f_ac").value,
       size: nv("#f_z"),
+      sz: nv("#f_z"),
       entry: nv("#f_en"),
+      ent: nv("#f_en"),
       sl: nv("#f_sl"),
       tp: nv("#f_tp"),
       sh: sh,
+      shots: sh,
     };
     S.trades = S.trades.filter((x) => x.id !== o.id);
     S.trades.push(o);
     S.profile.lastAcc = o.acc;
     if (save()) {
       closeM();
-      toast(ok ? "Saved. Full discipline, nice." : "Trade saved");
-      if (ok) confetti();
+      toast(id ? "Trade updated successfully" : (ok ? "Saved. Full discipline, nice." : "Trade saved"));
+      if (ok && !id) confetti();
       render();
     }
   };
@@ -1726,11 +1782,13 @@ function tradeForm(id) {
       tradeCard(id);
     };
     v.querySelector("#f_del").onclick = function () {
-      (t.sh || []).forEach(function (k) {
+      if (!confirm("Are you sure you want to delete this trade?")) return;
+      var sh = (t && t.sh) || (t && t.shots) || [];
+      sh.forEach(function (k) {
         shotDel(tid + ":" + k).catch(function () {});
       });
       S.trades = S.trades.filter((x) => x.id !== id);
-      if (typeof LockinSync !== "undefined") {
+      if (typeof LockinSync !== "undefined" && LockinSync.deleteTrade) {
         LockinSync.deleteTrade(id);
       }
       save();
@@ -3414,6 +3472,7 @@ function propTab() {
     if (!a.firm && a.name) a.firm = a.name;
     if (!a.status && a.st) a.status = a.st;
     if (!a.status) a.status = "Evaluation";
+    if (!a.split) a.split = 80;
     if (!Array.isArray(a.hist)) {
       a.hist = a.date ? [{ d: a.date, s: a.status, n: "Purchased" }] : [];
     }
@@ -3423,13 +3482,14 @@ function propTab() {
     Y = S.pays,
     spent = A.reduce((x, a) => x + (+a.cost || 0), 0),
     paid = Y.reduce((x, p) => x + (+p.amt || 0), 0),
+    fees = Y.reduce((x, p) => x + (+p.fee || 0), 0),
     elig = A.filter((a) => a.type !== "Instant"),
     ever = elig.filter((a) =>
       (a.hist || []).some((h) => h.s === "Passed" || h.s === "Funded"),
     ).length,
     fd = A.filter((a) => a.status === "Funded").length,
     bl = A.filter((a) => a.status === "Blown").length,
-    net = paid - spent,
+    net = paid + fees - spent,
     list = A.filter((a) => pflt === "All" || a.status === pflt)
       .slice()
       .reverse(),
@@ -3458,8 +3518,8 @@ function propTab() {
     var a = A.filter((x) => x.id === (p.acc || p.aid))[0];
     ev.push({
       d: p.date || p.d,
-      t: "Payout received",
-      s: a ? esc(a.firm || a.name || "Account") + " · " + money(a.size) : "",
+      t: "Payout received" + (p.split ? " (" + p.split + "% split)" : ""),
+      s: a ? esc(a.firm || a.name || "Account") + " · " + money(a.size) + (p.fee ? " · −" + money(p.fee) + " fee" : "") : "",
       amt: p.amt,
       ic: "💸",
     });
@@ -3508,11 +3568,10 @@ function propTab() {
       ? '<div class="accs">' +
         list
           .map((a) => {
-            var pt = Y.filter((p) => p.acc === a.id).reduce(
-                (x, p) => x + (+p.amt || 0),
-                0,
-              ),
-              n = pt - (+a.cost || 0),
+            var py = Y.filter((p) => (p.acc || p.aid) === a.id),
+              pt = py.reduce((x, p) => x + (+p.amt || 0), 0),
+              pf = py.reduce((x, p) => x + (+p.fee || 0), 0),
+              n = pt + pf - (+a.cost || 0),
               pc =
                 a.status === "Evaluation"
                   ? 35
@@ -3537,6 +3596,7 @@ function propTab() {
               money(a.size) +
               (a.market ? " · " + a.market : "") +
               (a.type ? " · " + a.type : "") +
+              (a.split ? " · " + a.split + "% split" : "") +
               (a.label ? " · " + esc(a.label) : "") +
               '</div></div><span class="badge b-' +
               SC[a.status] +
@@ -3724,7 +3784,7 @@ function acctForm() {
       cost: c,
       market: pq.m,
       type: pq.t,
-      split: pq.sp,
+      split: pq.sp || 80,
       notes: v.querySelector("#a_n").value.trim(),
       label: "",
       date: d,
@@ -3738,22 +3798,40 @@ function acctForm() {
     }
   };
 }
+
+function deletePayoutConfirm(id) {
+  var p = S.pays.filter((x) => x.id === id)[0];
+  if (!p) return;
+  if (!confirm("Are you sure you want to delete this payout (" + money(p.amt) + ")?")) return;
+  S.pays = S.pays.filter((x) => x.id !== id);
+  if (typeof LockinSync !== "undefined" && LockinSync.deletePayout) {
+    LockinSync.deletePayout(id);
+  }
+  save();
+  closeM();
+  toast("Payout deleted");
+  render();
+}
+
 function acctView(id) {
   var a = S.accts.filter((x) => x.id === id)[0];
   if (!a) return;
   if (!a.firm && a.name) a.firm = a.name;
   if (!a.status && a.st) a.status = a.st;
   if (!a.status) a.status = "Evaluation";
+  if (!a.split) a.split = 80;
   if (!Array.isArray(a.hist)) a.hist = [];
   var py = S.pays.filter((p) => (p.acc || p.aid) === id),
     pt = py.reduce((x, p) => x + (+p.amt || 0), 0),
-    n = pt - (+a.cost || 0),
+    pf = py.reduce((x, p) => x + (+p.fee || 0), 0),
+    n = pt + pf - (+a.cost || 0),
     ev = (a.hist || [])
       .map((h) => ({ d: h.d, t: h.s + (h.n ? " · " + h.n : "") }))
       .concat(
         py.map((p) => ({
+          id: p.id,
           d: p.date || p.d,
-          t: "Payout " + money(p.amt) + (p.note ? " · " + p.note : ""),
+          t: "Payout " + money(p.amt) + (p.split ? " (" + p.split + "% split" + (p.fee ? ", −" + money(p.fee) + " fee" : "") + ")" : "") + (p.note ? " · " + p.note : ""),
           p: 1,
         })),
       )
@@ -3767,6 +3845,7 @@ function acctView(id) {
       a.status +
       '</span></h2><p class="mut">' +
       money(a.size) +
+      (a.split ? " · " + a.split + "% split" : "") +
       (a.label ? " · " + esc(a.label) : "") +
       " · paid " +
       money(a.cost) +
@@ -3782,12 +3861,18 @@ function acctView(id) {
       ev
         .map(
           (e) =>
-            "<div><b>" +
+            '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div><b>' +
             nice(e.d) +
             '</b><div class="mut">' +
             (e.p ? "💸 " : "") +
             esc(e.t) +
-            "</div></div>",
+            "</div></div>" +
+            (e.p && e.id
+              ? '<button class="mini" style="color:var(--dn);border:none;background:transparent;padding:4px;cursor:pointer;font-size:14px;flex:none" title="Delete payout" onclick="event.stopPropagation();deletePayoutConfirm(\'' +
+                e.id +
+                "')\">🗑️</button>"
+              : "") +
+            "</div>",
         )
         .join("") +
       "</div>" +
@@ -3840,6 +3925,7 @@ function acctView(id) {
     }
   };
 }
+
 function payForm(pre) {
   var el = S.accts.filter(
     (a) => a.status === "Passed" || a.status === "Funded",
@@ -3850,44 +3936,153 @@ function payForm(pre) {
     );
     return;
   }
+  var selId = pre && el.some((a) => a.id === pre) ? pre : el[0].id;
+  function getAcc(id) {
+    return el.filter((a) => a.id === id)[0] || el[0];
+  }
+
   var v = modal(
-    '<h2>Log a payout</h2><label for="y_a">Account</label><select id="y_a">' +
+    "<h2>Log a payout</h2>" +
+      '<label for="y_a">Account</label><select id="y_a">' +
       el
         .map(
           (a) =>
             '<option value="' +
             a.id +
             '"' +
-            (a.id === pre ? " selected" : "") +
+            (a.id === selId ? " selected" : "") +
             ">" +
             esc(a.firm) +
             " · " +
             money(a.size) +
             " · " +
             a.status +
+            " (" +
+            (a.split || 80) +
+            "% split)" +
             "</option>",
         )
         .join("") +
-      '</select><div class="row"><div><label for="y_m">Payout ($)</label><input id="y_m" type="number" inputmode="decimal"></div><div><label for="y_d">Date</label><input id="y_d" type="date" value="' +
+      '</select><div id="y_calc_box" style="margin:10px 0 6px"></div><div class="row"><div><label for="y_m">Profit / Withdrawal request ($)</label><input id="y_m" type="number" step="any" inputmode="decimal" placeholder="e.g. 1000"></div><div><label for="y_d">Date</label><input id="y_d" type="date" value="' +
       today() +
-      '"></div></div><label for="y_n">Note (optional)</label><input id="y_n" placeholder="First payout, 80% split…"><button class="pri" id="y_b" style="width:100%;margin-top:16px">Save payout</button>',
+      '"></div></div><div id="y_math_preview" style="background:var(--surf2);border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0 6px"></div><label for="y_n">Note (optional)</label><input id="y_n" placeholder="Notes…"><button class="pri" id="y_b" style="width:100%;margin-top:16px">Save payout</button>',
   );
+
+  function updateMath() {
+    var a = getAcc(v.querySelector("#y_a").value);
+    var prevPays = S.pays.filter((p) => (p.acc || p.aid) === a.id);
+    var isFirst = prevPays.length === 0;
+    var splitPct = a.split || 80;
+    var cost = +a.cost || 0;
+    var gross = parseFloat(v.querySelector("#y_m").value);
+
+    var grossVal = isNaN(gross) ? 0 : Math.max(0, gross);
+    var splitVal = Math.round(grossVal * (splitPct / 100) * 100) / 100;
+    var feeVal = isFirst && cost > 0 ? cost : 0;
+    var netVal = Math.max(0, Math.round((splitVal - feeVal) * 100) / 100);
+
+    var prevHtml =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+      '<span class="mut" style="font-size:13px">Profit split:</span>' +
+      '<b style="font-size:13px">' +
+      splitPct +
+      "% (" +
+      money(splitVal) +
+      ")</b>" +
+      "</div>";
+
+    if (isFirst && cost > 0) {
+      prevHtml +=
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+        '<span class="mut" style="font-size:13px">1st payout cost deduction:</span>' +
+        '<b class="dn" style="font-size:13px">−' +
+        money(feeVal) +
+        " (purchased price)</b>" +
+        "</div>";
+    } else if (!isFirst) {
+      prevHtml +=
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+        '<span class="mut" style="font-size:12px">Account cost:</span>' +
+        '<span class="mut" style="font-size:12px">Already deducted on 1st payout</span>' +
+        "</div>";
+    }
+
+    prevHtml +=
+      '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:8px;margin-top:4px">' +
+      '<div><b>You receive:</b><div class="mut" style="font-size:11px">Split amount logged to account</div></div>' +
+      '<b class="up" style="font-size:20px;font-family:var(--f3)">' +
+      money(netVal) +
+      "</b>" +
+      "</div>";
+
+    v.querySelector("#y_math_preview").innerHTML = prevHtml;
+
+    var badgeHtml =
+      '<div style="font-size:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+      '<span class="tag">Split: <b>' +
+      splitPct +
+      "%</b></span>" +
+      '<span class="tag">Price paid: <b>' +
+      money(cost) +
+      "</b></span>" +
+      '<span class="tag ' +
+      (isFirst ? "up" : "") +
+      '">' +
+      (isFirst
+        ? "★ First payout (fee deduction active)"
+        : "Payout #" + (prevPays.length + 1)) +
+      "</span>" +
+      "</div>";
+    v.querySelector("#y_calc_box").innerHTML = badgeHtml;
+  }
+
+  updateMath();
+  v.querySelector("#y_a").onchange = updateMath;
+  v.querySelector("#y_m").oninput = updateMath;
+
   v.querySelector("#y_b").onclick = function () {
-    var q = parseFloat($("#y_m").value);
-    if (!(q > 0)) {
-      toast("Enter the payout amount.");
+    var a = getAcc(v.querySelector("#y_a").value);
+    var gross = parseFloat(v.querySelector("#y_m").value);
+    if (!(gross > 0)) {
+      toast("Enter the profit / withdrawal amount.");
       return;
     }
+    var prevPays = S.pays.filter((p) => (p.acc || p.aid) === a.id);
+    var isFirst = prevPays.length === 0;
+    var splitPct = a.split || 80;
+    var cost = +a.cost || 0;
+    var splitVal = Math.round(gross * (splitPct / 100) * 100) / 100;
+    var feeVal = isFirst && cost > 0 ? cost : 0;
+    var netVal = Math.max(0, Math.round((splitVal - feeVal) * 100) / 100);
+
+    var noteText = v.querySelector("#y_n").value.trim();
+    if (!noteText) {
+      noteText =
+        isFirst && feeVal > 0
+          ? "1st payout · " +
+            splitPct +
+            "% split · −" +
+            money(feeVal) +
+            " purchase fee"
+          : splitPct + "% split";
+    }
+
     S.pays.push({
       id: uid(),
-      acc: $("#y_a").value,
-      date: $("#y_d").value || today(),
-      amt: q,
-      note: $("#y_n").value.trim(),
+      acc: a.id,
+      aid: a.id,
+      date: v.querySelector("#y_d").value || today(),
+      d: v.querySelector("#y_d").value || today(),
+      gross: gross,
+      split: splitPct,
+      fee: feeVal,
+      amt: netVal,
+      note: noteText,
     });
+
     if (save()) {
       closeM();
-      toast("Payout logged 💸");
+      toast("Payout logged: " + money(netVal) + " 💸");
       confetti();
       render();
     }
